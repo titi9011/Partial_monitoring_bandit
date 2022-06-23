@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-
+import random
 
 
 class linucb_disjoint_arm():
@@ -264,33 +264,57 @@ class partial_monitoring:
             predicted_state = self.next_state_black_box(predicted_state, False)
             survey_tomorrow = self.linucb_policy_object.select_arm(predicted_state)
             if survey_tomorrow == 1:
+                list_surveys.append(True)#
+                list_predicted_states.append(predicted_state)#
+                predicted_state = real_states[t]
+                
                 if real_states[t] >= threshold:
                     self.linucb_policy_object.linucb_arms[survey_tomorrow].reward_update(1, predicted_state)
-                    list_predicted_states.append(predicted_state)#
-                    predicted_state = real_states[t]
-                    list_surveys.append(True)#
+
                 else:
                     self.linucb_policy_object.linucb_arms[survey_tomorrow].reward_update(0, predicted_state)
-                    list_predicted_states.append(predicted_state)#
-                    list_surveys.append(False)#
                     
             elif survey_tomorrow == 0:
-                self.linucb_policy_object.linucb_arms[survey_tomorrow].reward_update(0.07, predicted_state)
-                list_predicted_states.append(predicted_state)#
                 list_surveys.append(False)#
+                self.linucb_policy_object.linucb_arms[survey_tomorrow].reward_update(0.5, predicted_state)
+                list_predicted_states.append(predicted_state)#
                 
         return real_states, list_predicted_states, list_surveys
 
 
-    
+    '''
     def performance_linUCB(self, first_state, nb_day, threshold):
         fp = 0
         fn = 0
         vp = 0
         vn = 0
-        for i in range(100):
+        for i in range(1000):
             real_states, list_predicted_states, list_surveys = self.linUCB(first_state, nb_day, threshold)
-            for t in range(1, nb_day):
+            #print(real_states, list_predicted_states, list_surveys)
+            for t in range(nb_day):
+                if real_states[t+1] >= threshold and list_surveys[t] == True:
+                    vp += 1
+                elif real_states[t+1] >= threshold and list_surveys[t] == False:
+                    fn += 1
+                elif real_states[t+1] < threshold and list_surveys[t] == True:
+                    fp += 1
+                elif real_states[t+1] < threshold and list_surveys[t] == False:
+                    vn += 1
+        return np.array([[vp, fn],[fp, vn]])
+
+    '''
+
+    def performance_linUCB(self):
+        fp = 0
+        fn = 0
+        vp = 0
+        vn = 0
+        for i in range(1000):
+            nb_day = random.randint(0,30)
+            first_state = random.randint(0,9)
+            threshold = random.randint(0,9)
+            real_states, list_predicted_states, list_surveys = self.linUCB(first_state, nb_day, threshold)
+            for t in range(nb_day):
                 if real_states[t+1] >= threshold and list_surveys[t] == True:
                     vp += 1
                 elif real_states[t+1] >= threshold and list_surveys[t] == False:
@@ -305,10 +329,11 @@ class partial_monitoring:
 x = partial_monitoring()
 x.create_augmented_matrix()
 x.create_black_box_proportional()
-print(x.performance_linUCB(1, 30, 5))
+y = x.performance_linUCB()
 
 
-
+print((y[0][0]+y[1][1])/(y[0][0] + y[1][0] + y[0][1] + y[1][1])*100)
+print(y[0][1]/(y[0][0] + y[1][0] + y[0][1] + y[0][1])*100)
 
 
 
