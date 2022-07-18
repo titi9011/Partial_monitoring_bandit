@@ -1,97 +1,18 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import random
-
-
-class linucb_disjoint_arm():
-    
-    def __init__(self, arm_index, d, alpha):
-        
-        # Track arm index
-        self.arm_index = arm_index
-        
-        # Keep track of alpha
-        self.alpha = alpha
-        
-        # A: (d x d) matrix = D_a.T * D_a + I_d. 
-        # The inverse of A is used in ridge regression 
-        self.A = np.identity(d)
-        
-        # b: (d x 1) corresponding response vector. 
-        # Equals to D_a.T * c_a in ridge regression formulation
-        self.b = np.zeros([d,1])
-        
-    def calc_UCB(self, x_array):
-        # Find A inverse for ridge regression
-        A_inv = np.linalg.inv(self.A)
-        
-        # Perform ridge regression to obtain estimate of covariate coefficients theta
-        # theta is (d x 1) dimension vector
-        self.theta = np.dot(A_inv, self.b)
-        
-        # Reshape covariates input into (d x 1) shape vector
-        x = x_array.reshape([-1,1])
-        
-        # Find ucb based on p formulation (mean + std_dev) 
-        # p is (1 x 1) dimension vector
-        p = np.dot(self.theta.T,x) +  self.alpha * np.sqrt(np.dot(x.T, np.dot(A_inv,x)))
-        
-        return p
-    
-    def reward_update(self, reward, x_array):
-        # Reshape covariates input into (d x 1) shape vector
-        x = x_array.reshape([-1,1])
-        
-        # Update A which is (d * d) matrix.
-        self.A += np.dot(x, x.T)
-        
-        # Update b which is (d x 1) vector
-        # reward is scalar
-        self.b += reward * x
-        
-        
-class linucb_policy():
-    
-    def __init__(self, K_arms, d, alpha):
-        self.K_arms = K_arms
-        self.linucb_arms = [linucb_disjoint_arm(arm_index = 1, d = d, alpha = alpha) for i in range(K_arms)]
-        
-    def select_arm(self, x_array):
-        # Initiate ucb to be 0
-        highest_ucb = -1
-        
-        # Track index of arms to be selected on if they have the max UCB.
-        candidate_arms = []
-        
-        for arm_index in range(self.K_arms):
-            # Calculate ucb based on each arm using current covariates at time t
-            arm_ucb = self.linucb_arms[arm_index].calc_UCB(x_array)
-            
-            # If current arm is highest than current highest_ucb
-            if arm_ucb > highest_ucb:
-                
-                # Set new max ucb
-                highest_ucb = arm_ucb
-                
-                # Reset candidate_arms list with new entry based on current arm
-                candidate_arms = [arm_index]
-
-            # If there is a tie, append to candidate_arms
-            if arm_ucb == highest_ucb:
-                
-                candidate_arms.append(arm_index)
-        
-        # Choose based on candidate_arms randomly (tie breaker)
-        chosen_arm = np.random.choice(candidate_arms)
-        
-        return chosen_arm
-
-
+from linUCB import linucb_policy, UCB
+from scipy import signal
+import seaborn as sns
 
 class partial_monitoring:
     def __init__(self):
         self.randomized = True
         self.linucb_policy_object = linucb_policy(K_arms = 2, d = 1, alpha = 1)
+        self.UCB = UCB(2)
+        self.reward = 1
+        self.unkown_reward = 0.001
+        self.iteration_plot = 30
         
     def next_state(self, current_state, random):
         if random == True:
@@ -138,7 +59,7 @@ class partial_monitoring:
         gaussian_reduced_random = np.abs(gaussian_reduced_random)
         row_sums = gaussian_reduced_random.sum(axis=1)
         gaussian_reduced_random = gaussian_reduced_random / row_sums[:, np.newaxis]
-        self.markov = np.arrya(gaussian_reduced_random)
+        self.markov = np.array(gaussian_reduced_random)
     
     def create_augmented_matrix(self):
         #Create a markov matrix with a path that has a tendency to rise
@@ -152,6 +73,29 @@ class partial_monitoring:
         row_sums = gaussian_augmented_random.sum(axis=1)
         gaussian_augmented_random = gaussian_augmented_random / row_sums[:, np.newaxis]
         self.markov = np.array(gaussian_augmented_random)
+        
+    def create_spike_matrix(self):
+        spike_random = np.zeros((10,10))
+        s = signal.triang(19)
+        random = np.random.normal(0.1, 0.2, 100).reshape((10,10))
+        for i in range(len(spike_random)):
+            spike_random[i] = s[9-i:19-i]
+        spike_random += random
+        spike_random = np.abs(spike_random)
+        row_sums = spike_random.sum(axis=1)
+        spike_random = spike_random / row_sums[:, np.newaxis]
+        self.markov = np.array(spike_random)
+    
+    def create_gaussian_matrix(self):
+        gaussian_random = np.zeros((10,10))
+        for i in range(len(gaussian_random)):
+            count, bins, ignored = plt.hist(np.random.normal(10, 1, 100), bins=range(0, 20,1))
+            plt.clf()
+            gaussian_random[i] = count[9-i:19-i]
+        gaussian_random = np.abs(gaussian_random)
+        row_sums = gaussian_random.sum(axis=1)
+        gaussian_random = gaussian_random / row_sums[:, np.newaxis]
+        self.markov = np.array(gaussian_random)
         
     def create_black_box_gaussian(self):
         len_row = len(self.markov)
@@ -235,24 +179,91 @@ class partial_monitoring:
                 list_surveys.append(False)
         return real_states, list_predicted_states, list_surveys
 
-    def performance_threshold(self, first_state, nb_day, threshold):
+    def performance_threshold(self):
         fp = 0
         fn = 0
         vp = 0
         vn = 0
-        for i in range(1):
+        pseudo_regret_cumulatif = 0
+        list_regret = []
+        for i in range(self.iteration_plot):
+            nb_day = 30
+            first_state = 5
+            threshold = 8
             real_states, list_predicted_states, list_surveys = self.threshold(first_state, nb_day, threshold)
-            print(real_states, list_predicted_states, list_surveys)
+            
             for t in range(nb_day):
                 if real_states[t+1] >= threshold and list_surveys[t] == True:
                     vp += 1
+                    list_regret.append(pseudo_regret_cumulatif)
                 elif real_states[t+1] >= threshold and list_surveys[t] == False:
                     fn += 1
+                    pseudo_regret_cumulatif += self.reward - self.unkown_reward
+                    list_regret.append(pseudo_regret_cumulatif)
                 elif real_states[t+1] < threshold and list_surveys[t] == True:
                     fp += 1
+                    pseudo_regret_cumulatif += self.unkown_reward
+                    list_regret.append(pseudo_regret_cumulatif)
                 elif real_states[t+1] < threshold and list_surveys[t] == False:
                     vn += 1
-        return np.array([[vp, fn],[fp, vn]])
+                    list_regret.append(pseudo_regret_cumulatif)
+        plt.plot(list_regret)
+        return np.array([[vp, fn],[fp, vn]]), (vp+vn)/(fn+fp)
+        
+    def apply_UCB(self, first_state, nb_day, threshold):
+        real_states = self.predict_states(first_state, nb_day, True)
+        list_surveys = []#
+        for t in range(1, nb_day+1):
+            if self.UCB.t == 0:
+                list_surveys.append(False)
+                self.UCB.reward(1, self.unkown_reward)
+            elif self.UCB.t == 1:
+                list_surveys.append(True)
+                if real_states[t] >= threshold:
+                    self.UCB.reward(0, self.reward)
+                elif real_states[t] < threshold:
+                    self.UCB.reward(0, 0)
+            elif self.UCB.ucb() == 0:
+                list_surveys.append(True)
+                if real_states[t] >= threshold:
+                    self.UCB.reward(0, self.reward)
+                elif real_states[t] < threshold:
+                    self.UCB.reward(0, 0)
+            elif self.UCB.ucb() == 1:
+                list_surveys.append(False)
+                self.UCB.reward(1, self.unkown_reward)
+        return real_states, list_surveys
+    
+    def performance_UCB(self):
+        fp = 0
+        fn = 0
+        vp = 0
+        vn = 0
+        pseudo_regret_cumulatif = 0
+        list_regret = []
+        for i in range(self.iteration_plot):
+            nb_day = 30
+            first_state = 5
+            threshold = 8
+            real_states, list_surveys = self.apply_UCB(first_state, nb_day, threshold)
+            
+            for t in range(nb_day):
+                if real_states[t+1] >= threshold and list_surveys[t] == True:
+                    vp += 1
+                    list_regret.append(pseudo_regret_cumulatif)
+                elif real_states[t+1] >= threshold and list_surveys[t] == False:
+                    fn += 1
+                    pseudo_regret_cumulatif += self.reward - self.unkown_reward
+                    list_regret.append(pseudo_regret_cumulatif)
+                elif real_states[t+1] < threshold and list_surveys[t] == True:
+                    fp += 1
+                    pseudo_regret_cumulatif += self.unkown_reward
+                    list_regret.append(pseudo_regret_cumulatif)
+                elif real_states[t+1] < threshold and list_surveys[t] == False:
+                    vn += 1
+                    list_regret.append(pseudo_regret_cumulatif)
+        #plt.plot(list_regret)
+        return np.array([[vp, fn],[fp, vn]]), list_regret
         
 
     def linUCB(self, first_state, nb_day, threshold):
@@ -262,78 +273,221 @@ class partial_monitoring:
         list_surveys = []#
         for t in range(1, nb_day+1):
             predicted_state = self.next_state_black_box(predicted_state, False)
-            survey_tomorrow = self.linucb_policy_object.select_arm(predicted_state)
-            if survey_tomorrow == 1:
+            survey = self.linucb_policy_object.select_arm(predicted_state)
+            if survey == 1:
                 list_surveys.append(True)#
                 list_predicted_states.append(predicted_state)#
                 predicted_state = real_states[t]
                 
                 if real_states[t] >= threshold:
-                    self.linucb_policy_object.linucb_arms[survey_tomorrow].reward_update(1, predicted_state)
+                    self.linucb_policy_object.linucb_arms[survey].reward_update(self.reward, predicted_state)
 
                 else:
-                    self.linucb_policy_object.linucb_arms[survey_tomorrow].reward_update(0, predicted_state)
+                    self.linucb_policy_object.linucb_arms[survey].reward_update(0, predicted_state)
                     
-            elif survey_tomorrow == 0:
+            elif survey == 0:
                 list_surveys.append(False)#
-                self.linucb_policy_object.linucb_arms[survey_tomorrow].reward_update(0.5, predicted_state)
+                self.linucb_policy_object.linucb_arms[survey].reward_update(self.unkown_reward, predicted_state)
                 list_predicted_states.append(predicted_state)#
-                
         return real_states, list_predicted_states, list_surveys
 
-
-    '''
-    def performance_linUCB(self, first_state, nb_day, threshold):
-        fp = 0
-        fn = 0
-        vp = 0
-        vn = 0
-        for i in range(1000):
-            real_states, list_predicted_states, list_surveys = self.linUCB(first_state, nb_day, threshold)
-            #print(real_states, list_predicted_states, list_surveys)
-            for t in range(nb_day):
-                if real_states[t+1] >= threshold and list_surveys[t] == True:
-                    vp += 1
-                elif real_states[t+1] >= threshold and list_surveys[t] == False:
-                    fn += 1
-                elif real_states[t+1] < threshold and list_surveys[t] == True:
-                    fp += 1
-                elif real_states[t+1] < threshold and list_surveys[t] == False:
-                    vn += 1
-        return np.array([[vp, fn],[fp, vn]])
-
-    '''
 
     def performance_linUCB(self):
         fp = 0
         fn = 0
         vp = 0
         vn = 0
-        for i in range(1000):
-            nb_day = random.randint(0,30)
-            first_state = random.randint(0,9)
-            threshold = random.randint(0,9)
+        pseudo_regret_cumulatif = 0
+        list_regret = []
+        for i in range(self.iteration_plot):
+            nb_day = 30
+            first_state = 5
+            threshold = 8
             real_states, list_predicted_states, list_surveys = self.linUCB(first_state, nb_day, threshold)
             for t in range(nb_day):
                 if real_states[t+1] >= threshold and list_surveys[t] == True:
                     vp += 1
+                    list_regret.append(pseudo_regret_cumulatif)
                 elif real_states[t+1] >= threshold and list_surveys[t] == False:
                     fn += 1
+                    pseudo_regret_cumulatif += self.reward - self.unkown_reward
+                    list_regret.append(pseudo_regret_cumulatif)
                 elif real_states[t+1] < threshold and list_surveys[t] == True:
                     fp += 1
+                    pseudo_regret_cumulatif += self.unkown_reward
+                    list_regret.append(pseudo_regret_cumulatif)
                 elif real_states[t+1] < threshold and list_surveys[t] == False:
                     vn += 1
-        return np.array([[vp, fn],[fp, vn]])
+                    list_regret.append(pseudo_regret_cumulatif)
+        #plt.plot(list_regret)
+        return np.array([[vp, fn],[fp, vn]]), list_regret
+    
+    def performance_random(self):
+        fp = 0
+        fn = 0
+        vp = 0
+        vn = 0
+        pseudo_regret_cumulatif = 0
+        list_regret = []
+        for i in range(self.iteration_plot):
+            nb_day = 30
+            first_state = 5
+            threshold = 8
+            real_states = self.predict_states(first_state, nb_day, True)
+            list_surveys = [random.choice([True, False]) for i in range(len(real_states)-1)]
+            
+            for t in range(nb_day):
+                if real_states[t+1] >= threshold and list_surveys[t] == True:
+                    vp += 1
+                    list_regret.append(pseudo_regret_cumulatif)
+                elif real_states[t+1] >= threshold and list_surveys[t] == False:
+                    fn += 1
+                    pseudo_regret_cumulatif += self.reward - self.unkown_reward
+                    list_regret.append(pseudo_regret_cumulatif)
+                elif real_states[t+1] < threshold and list_surveys[t] == True:
+                    fp += 1
+                    pseudo_regret_cumulatif += self.unkown_reward
+                    list_regret.append(pseudo_regret_cumulatif)
+                elif real_states[t+1] < threshold and list_surveys[t] == False:
+                    vn += 1
+                    list_regret.append(pseudo_regret_cumulatif)
+        return np.array([[vp, fn],[fp, vn]]), list_regret
+    
+    def plot_confusion_matrix(self, confusion_matrix):
+        #ax = sns.heatmap(confusion_matrix/np.sum(confusion_matrix), annot=True, 
+        #                 fmt='.2%', cmap='Blues')
+        ax = sns.heatmap(confusion_matrix, annot=True, cmap='Blues')
+        ax.set_xlabel('\nPredicted Values')
+        ax.set_ylabel('Actual Values ');
+        ax.xaxis.set_ticklabels(['False','True'])
+        ax.yaxis.set_ticklabels(['False','True'])
+        plt.show()
+    
+    def UCBvslinUCBvsRandom(self):
+        list_list_regret_UCB = []
+        list_list_regret_linUCB = []
+        list_list_regret_random = []#
+        
+        list_list_confusion_UCB = []
+        list_list_confusion_linUCB = []
+        list_list_confusion_random = []#
+        for i in range(100):
+            matrix, list_regret_UCB = self.performance_UCB()
+            list_list_regret_UCB.append(list_regret_UCB)
+            list_list_confusion_UCB.append(matrix)
+            matrix, list_regret_linUCB = self.performance_linUCB()
+            list_list_regret_linUCB.append(list_regret_linUCB)
+            list_list_confusion_linUCB.append(matrix)
+            matrix, list_regret_random = self.performance_random()#
+            list_list_regret_random.append(list_regret_random)#
+            list_list_confusion_random.append(matrix)#
+           
+        list_list_regret_UCB = np.array(list_list_regret_UCB)
+        list_list_regret_linUCB = np.array(list_list_regret_linUCB)
+        list_list_regret_random = np.array(list_list_regret_random)#
+        list_list_confusion_UCB = np.array(list_list_confusion_UCB)
+        list_list_confusion_linUCB = np.array(list_list_confusion_linUCB)
+        list_list_confusion_random = np.array(list_list_confusion_random)
+        
+        #Confusion matrix
+        np.set_printoptions(suppress=True)
+        mean_confusion_UCB = np.mean(list_list_confusion_UCB, axis=0)
+        self.plot_confusion_matrix(mean_confusion_UCB)
+        mean_confusion_linUCB = np.mean(list_list_confusion_linUCB, axis=0)
+        self.plot_confusion_matrix(mean_confusion_linUCB)
+        mean_confusion_random = np.mean(list_list_confusion_random, axis=0)#
+        self.plot_confusion_matrix(mean_confusion_random)
+        
+        mean_UCB = np.mean(list_list_regret_UCB, axis=0)
+        std_UCB = np.std(list_list_regret_UCB, axis=0)
+        UCB_upper = mean_UCB + std_UCB
+        UCB_lower = mean_UCB - std_UCB
+        
+        mean_linUCB = np.mean(list_list_regret_linUCB, axis=0)
+        std_linUCB = np.std(list_list_regret_linUCB, axis=0)
+        linUCB_upper = mean_linUCB + std_linUCB
+        linUCB_lower = mean_linUCB - std_linUCB
+        x = [i for i in range(len(mean_UCB))]
+        
+        #mean_random = np.mean(list_list_regret_random, axis=0)#
+        #std_random = np.std(list_list_regret_random, axis=0)#
+        #random_upper = mean_random + std_random#
+        #random_lower = mean_random - std_random#
 
+        plt.plot(mean_UCB, label='UCB mean')
+        plt.fill_between(x, UCB_lower, UCB_upper, alpha = 0.3)
+        plt.plot(mean_linUCB, label='LinUCB mean')
+        plt.fill_between(x, linUCB_upper, linUCB_lower, alpha = 0.3)
+        #plt.plot(mean_random, label='Random mean')#
+        #plt.fill_between(x, random_upper, random_lower, alpha = 0.3)#
+        plt.xlabel('Day')
+        plt.ylabel('Mean cumulative regret')
+        plt.legend(loc='upper right')
+        plt.show()
+            
+    def plot_mean_states_matrices(self):
+        nb_day = 30
+        list_list_spike = []
+        list_list_gaussian = []
+        list_list_augmented = []
+        list_list_reduced = []
+        for i in range(200):
+            self.create_spike_matrix()
+            list_list_spike.append(self.predict_states(5, nb_day, True))
+            self.create_gaussian_matrix()
+            list_list_gaussian.append(self.predict_states(1, nb_day, True))
+            self.create_augmented_matrix()
+            list_list_augmented.append(self.predict_states(1, nb_day, True))
+            self.create_reduced_matrix()
+            list_list_reduced.append(self.predict_states(9, nb_day, True))
+            
+        list_list_spike = np.array(list_list_spike)
+        list_list_gaussian = np.array(list_list_gaussian)
+        list_list_augmented = np.array(list_list_augmented)
+        list_list_reduced = np.array(list_list_reduced)
+        
+        mean_spike = np.mean(list_list_spike, axis=0)
+        std_spike = np.std(list_list_spike, axis=0)
+        spike_upper = mean_spike + std_spike
+        spike_lower = mean_spike - std_spike
+        
+        mean_gaussian = np.mean(list_list_gaussian, axis=0)
+        std_gaussian = np.std(list_list_gaussian, axis=0)
+        gaussian_upper = mean_gaussian + std_gaussian
+        gaussian_lower = mean_gaussian - std_gaussian
+        
+        mean_augmented = np.mean(list_list_augmented, axis=0)
+        std_augmented = np.std(list_list_augmented, axis=0)
+        augmented_upper = mean_augmented + std_augmented
+        augmented_lower = mean_augmented - std_augmented
+        
+        mean_reduced = np.mean(list_list_reduced, axis=0)
+        std_reduced = np.std(list_list_reduced, axis=0)
+        reduced_upper = mean_reduced + std_reduced
+        reduced_lower = mean_reduced - std_reduced
+        
+        x = [i for i in range(len(mean_augmented))]
+        
+        plt.figure(figsize=(10,7))
+        plt.plot(mean_spike, label='Spike matrix')
+        plt.fill_between(x, spike_lower, spike_upper, alpha = 0.3)
+        plt.plot(mean_gaussian, label='Gaussian matrix')
+        plt.fill_between(x, gaussian_upper, gaussian_lower, alpha = 0.3)
+        plt.plot(mean_augmented, label='Augmented matrix')
+        plt.fill_between(x, augmented_upper, augmented_lower, alpha = 0.3)
+        plt.plot(mean_reduced, label='Reduced matrix')
+        plt.fill_between(x, reduced_upper, reduced_lower, alpha = 0.3)
+        plt.xlabel('Day')
+        plt.ylabel('Mean path')
+        plt.legend(loc='upper right')
+        plt.show()
         
 x = partial_monitoring()
 x.create_augmented_matrix()
-x.create_black_box_proportional()
-y = x.performance_linUCB()
+x.create_black_box_gaussian()
+x.UCBvslinUCBvsRandom()
 
 
-print((y[0][0]+y[1][1])/(y[0][0] + y[1][0] + y[0][1] + y[1][1])*100)
-print(y[0][1]/(y[0][0] + y[1][0] + y[0][1] + y[0][1])*100)
 
 
 
