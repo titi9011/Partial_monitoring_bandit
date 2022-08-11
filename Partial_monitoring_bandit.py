@@ -2,17 +2,21 @@ import numpy as np
 import matplotlib.pyplot as plt
 import random
 from linUCB import linucb_policy, UCB
+from linTS import linTS_policy
 from scipy import signal
 import seaborn as sns
 
 class partial_monitoring:
     def __init__(self):
         self.randomized = True
-        self.linucb_policy_object = linucb_policy(K_arms = 2, d = 1, k = 1)
+        self.linucb_policy_object = linucb_policy(K_arms = 2, d = 1)
+        self.linTS_policy = linTS_policy(2,1)
         self.UCB = UCB(2)
         self.reward = 1
-        #self.unkown_reward = 0
         self.iteration_plot = 200
+        self.nb_day = 30
+        self.first_state = 4
+        self.threshold = 9
         
     def next_state(self, current_state, random):
         if random == True:
@@ -187,11 +191,10 @@ class partial_monitoring:
         pseudo_regret_cumulatif = 0
         list_regret = []
         for i in range(self.iteration_plot):
-            nb_day = 30
-            first_state = 5
-            threshold = 8
+            nb_day = self.nb_day
+            first_state = self.first_state
+            threshold = self.threshold
             real_states, list_predicted_states, list_surveys = self.threshold(first_state, nb_day, threshold)
-            
             for t in range(nb_day):
                 if real_states[t+1] >= threshold and list_surveys[t] == True:
                     vp += 1
@@ -214,21 +217,22 @@ class partial_monitoring:
         real_states = self.predict_states(first_state, nb_day, True)
         list_surveys = []#
         for t in range(1, nb_day+1):
-            if self.UCB.t == 0:
+            ucb = self.UCB.ucb()
+            if t == 1:
                 list_surveys.append(False)
-            elif self.UCB.t == 1:
+            elif t == 2:
                 list_surveys.append(True)
                 if real_states[t] >= threshold:
                     self.UCB.reward(0, self.reward)
                 elif real_states[t] < threshold:
                     self.UCB.reward(0, 0)
-            elif self.UCB.ucb() == 0:
+            elif ucb == 0:
                 list_surveys.append(True)
                 if real_states[t] >= threshold:
                     self.UCB.reward(0, self.reward)
                 elif real_states[t] < threshold:
                     self.UCB.reward(0, 0)
-            elif self.UCB.ucb() == 1:
+            elif ucb == 1:
                 list_surveys.append(False)
         return real_states, list_surveys
     
@@ -240,11 +244,10 @@ class partial_monitoring:
         pseudo_regret_cumulatif = 0
         list_regret = []
         for i in range(self.iteration_plot):
-            nb_day = 30
-            first_state = 5
-            threshold = 8
+            nb_day = self.nb_day
+            first_state = self.first_state
+            threshold = self.threshold
             real_states, list_surveys = self.apply_UCB(first_state, nb_day, threshold)
-            
             for t in range(nb_day):
                 if real_states[t+1] >= threshold and list_surveys[t] == True:
                     vp += 1
@@ -259,7 +262,6 @@ class partial_monitoring:
                 elif real_states[t+1] < threshold and list_surveys[t] == False:
                     vn += 1
                     list_regret.append(pseudo_regret_cumulatif)
-        #plt.plot(list_regret)
         return np.array([[vp, fn],[fp, vn]]), list_regret
         
 
@@ -280,7 +282,7 @@ class partial_monitoring:
                     self.linucb_policy_object.linucb_arms[survey].reward_update(self.reward, predicted_state)
                 
                 else:
-                    self.linucb_policy_object.linucb_arms[survey].reward_update(-self.reward/2, predicted_state)
+                    self.linucb_policy_object.linucb_arms[survey].reward_update(0, predicted_state)
                     
             elif survey == False:
                 list_surveys.append(False)#
@@ -288,6 +290,7 @@ class partial_monitoring:
         return real_states, list_predicted_states, list_surveys
 
 
+    
     def performance_linUCB(self):
         fp = 0
         fn = 0
@@ -296,10 +299,63 @@ class partial_monitoring:
         pseudo_regret_cumulatif = 0
         list_regret = []
         for i in range(self.iteration_plot):
-            nb_day = 5
-            first_state = 4
-            threshold = 6
+            nb_day = self.nb_day
+            first_state = self.first_state
+            threshold = self.threshold
             real_states, list_predicted_states, list_surveys = self.linUCB(first_state, nb_day, threshold)
+            for t in range(nb_day):
+                if real_states[t+1] >= threshold and list_surveys[t] == True:
+                    vp += 1
+                    list_regret.append(pseudo_regret_cumulatif)
+                elif real_states[t+1] >= threshold and list_surveys[t] == False:
+                    fn += 1
+                    pseudo_regret_cumulatif += self.reward
+                    list_regret.append(pseudo_regret_cumulatif)
+                elif real_states[t+1] < threshold and list_surveys[t] == True:
+                    fp += 1
+                    list_regret.append(pseudo_regret_cumulatif)
+                elif real_states[t+1] < threshold and list_surveys[t] == False:
+                    vn += 1
+                    list_regret.append(pseudo_regret_cumulatif)
+        #plt.plot(list_regret)
+        return np.array([[vp, fn],[fp, vn]]), list_regret
+
+    def linTS(self, first_state, nb_day, threshold):
+        real_states = self.predict_states(first_state, nb_day, True)
+        predicted_state = first_state
+        list_predicted_states = []#
+        list_surveys = []#
+        for t in range(1, nb_day+1):
+            predicted_state = self.next_state_black_box(predicted_state, False)
+            survey = self.linTS_policy.select_arm(predicted_state)
+            if survey == True:
+                list_surveys.append(True)#
+                list_predicted_states.append(predicted_state)#
+                predicted_state = real_states[t]
+                
+                if real_states[t] >= threshold:
+                    self.linTS_policy.linTS_arms[survey].update_reward(predicted_state, np.array([self.reward]))
+                
+                else:
+                    self.linTS_policy.linTS_arms[survey].update_reward(predicted_state, np.array([0]))
+                    
+            elif survey == False:
+                list_surveys.append(False)#
+                list_predicted_states.append(predicted_state)#
+        return real_states, list_predicted_states, list_surveys
+
+    def performance_linTS(self):
+        fp = 0
+        fn = 0
+        vp = 0
+        vn = 0
+        pseudo_regret_cumulatif = 0
+        list_regret = []
+        for i in range(self.iteration_plot):
+            nb_day = self.nb_day
+            first_state = self.first_state
+            threshold = self.threshold
+            real_states, list_predicted_states, list_surveys = self.linTS(first_state, nb_day, threshold)
             for t in range(nb_day):
                 if real_states[t+1] >= threshold and list_surveys[t] == True:
                     vp += 1
@@ -325,9 +381,9 @@ class partial_monitoring:
         pseudo_regret_cumulatif = 0
         list_regret = []
         for i in range(self.iteration_plot):
-            nb_day = 30
-            first_state = 3
-            threshold = 9
+            nb_day = self.nb_day
+            first_state = self.first_state
+            threshold = self.threshold
             real_states = self.predict_states(first_state, nb_day, True)
             list_surveys = [random.choice([True, False]) for i in range(len(real_states)-1)]
             
@@ -359,7 +415,7 @@ class partial_monitoring:
         plt.show()
     
     def UCBvslinUCBvsRandom(self):
-        #list_list_regret_UCB = []
+        list_list_regret_UCB = []
         list_list_regret_linUCB = []
         list_list_regret_random = []#
         
@@ -367,9 +423,11 @@ class partial_monitoring:
         list_list_confusion_linUCB = []
         list_list_confusion_random = []#
         for i in range(100):
-            #matrix, list_regret_UCB = self.performance_UCB()
-            #list_list_regret_UCB.append(list_regret_UCB)
-            #list_list_confusion_UCB.append(matrix)
+            self.linucb_policy_object.clean_all_variables()
+            self.UCB.clean_all_variables()
+            matrix, list_regret_UCB = self.performance_UCB()
+            list_list_regret_UCB.append(list_regret_UCB)
+            list_list_confusion_UCB.append(matrix)
             matrix, list_regret_linUCB = self.performance_linUCB()
             list_list_regret_linUCB.append(list_regret_linUCB)
             list_list_confusion_linUCB.append(matrix)
@@ -377,26 +435,26 @@ class partial_monitoring:
             list_list_regret_random.append(list_regret_random)#
             list_list_confusion_random.append(matrix)#
            
-        #list_list_regret_UCB = np.array(list_list_regret_UCB)
+        list_list_regret_UCB = np.array(list_list_regret_UCB)
         list_list_regret_linUCB = np.array(list_list_regret_linUCB)
-        list_list_regret_random = np.array(list_list_regret_random)#
-        list_list_confusion_UCB = np.array(list_list_confusion_UCB)
-        list_list_confusion_linUCB = np.array(list_list_confusion_linUCB)
-        list_list_confusion_random = np.array(list_list_confusion_random)
+        list_list_regret_random = np.array(list_list_regret_random)
+        #list_list_confusion_UCB = np.array(list_list_confusion_UCB)
+        #list_list_confusion_linUCB = np.array(list_list_confusion_linUCB)
+        #list_list_confusion_random = np.array(list_list_confusion_random)
         
         #Confusion matrix
-        np.set_printoptions(suppress=True)
+        #np.set_printoptions(suppress=True)
         #mean_confusion_UCB = np.mean(list_list_confusion_UCB, axis=0)
         #self.plot_confusion_matrix(mean_confusion_UCB)
-        mean_confusion_linUCB = np.mean(list_list_confusion_linUCB, axis=0)
-        self.plot_confusion_matrix(mean_confusion_linUCB, 'LinUCB')
-        mean_confusion_random = np.mean(list_list_confusion_random, axis=0)#
-        self.plot_confusion_matrix(mean_confusion_random, 'Random')
+        #mean_confusion_linUCB = np.mean(list_list_confusion_linUCB, axis=0)
+        #self.plot_confusion_matrix(mean_confusion_linUCB, 'LinUCB')
+        #mean_confusion_random = np.mean(list_list_confusion_random, axis=0)#
+        #self.plot_confusion_matrix(mean_confusion_random, 'Random')
         
-        #mean_UCB = np.mean(list_list_regret_UCB, axis=0)
-        #std_UCB = np.std(list_list_regret_UCB, axis=0)
-        #UCB_upper = mean_UCB + std_UCB
-        #UCB_lower = mean_UCB - std_UCB
+        mean_UCB = np.mean(list_list_regret_UCB, axis=0)
+        std_UCB = np.std(list_list_regret_UCB, axis=0)
+        UCB_upper = mean_UCB + std_UCB
+        UCB_lower = mean_UCB - std_UCB
         
         mean_linUCB = np.mean(list_list_regret_linUCB, axis=0)
         std_linUCB = np.std(list_list_regret_linUCB, axis=0)
@@ -404,17 +462,52 @@ class partial_monitoring:
         linUCB_lower = mean_linUCB - std_linUCB
         x = [i for i in range(len(mean_linUCB))]
         
-        #mean_random = np.mean(list_list_regret_random, axis=0)#
-        #std_random = np.std(list_list_regret_random, axis=0)#
-        #random_upper = mean_random + std_random#
-        #random_lower = mean_random - std_random#
+        mean_random = np.mean(list_list_regret_random, axis=0)#
+        std_random = np.std(list_list_regret_random, axis=0)#
+        random_upper = mean_random + std_random#
+        random_lower = mean_random - std_random#
 
-        #plt.plot(mean_UCB, label='UCB mean')
-        #plt.fill_between(x, UCB_lower, UCB_upper, alpha = 0.3)
+        plt.plot(mean_UCB, label='UCB mean')
+        plt.fill_between(x, UCB_lower, UCB_upper, alpha = 0.3)
         plt.plot(mean_linUCB, label='LinUCB mean')
         plt.fill_between(x, linUCB_upper, linUCB_lower, alpha = 0.3)
-        #plt.plot(mean_random, label='Random mean')#
-        #plt.fill_between(x, random_upper, random_lower, alpha = 0.3)#
+        plt.plot(mean_random, label='Random mean')#
+        plt.fill_between(x, random_upper, random_lower, alpha = 0.3)#
+        plt.xlabel('Day')
+        plt.ylabel('Mean cumulative regret')
+        plt.legend(loc='upper right')
+        plt.show()
+        
+    def linUCBvslinTS(self):
+        list_list_regret_linTS = []
+        list_list_regret_linUCB = []
+        
+        for i in range(100):
+            self.linucb_policy_object.clean_all_variables()
+            self.linTS_policy.clean_all_variables()
+            matrix, list_regret_linTS = self.performance_linTS()
+            list_list_regret_linTS.append(list_regret_linTS)
+            matrix, list_regret_linUCB = self.performance_linUCB()
+            list_list_regret_linUCB.append(list_regret_linUCB)
+           
+        list_list_regret_linTS = np.array(list_list_regret_linTS)
+        list_list_regret_linUCB = np.array(list_list_regret_linUCB)
+
+        mean_linTS = np.mean(list_list_regret_linTS, axis=0)
+        std_linTS = np.std(list_list_regret_linTS, axis=0)
+        linTS_upper = mean_linTS + std_linTS
+        linTS_lower = mean_linTS - std_linTS
+        
+        mean_linUCB = np.mean(list_list_regret_linUCB, axis=0)
+        std_linUCB = np.std(list_list_regret_linUCB, axis=0)
+        linUCB_upper = mean_linUCB + std_linUCB
+        linUCB_lower = mean_linUCB - std_linUCB
+        x = [i for i in range(len(mean_linUCB))]
+        
+        plt.plot(mean_linTS, label='linTS mean')
+        plt.fill_between(x, linTS_lower, linTS_upper, alpha = 0.3)
+        plt.plot(mean_linUCB, label='LinUCB mean')
+        plt.fill_between(x, linUCB_upper, linUCB_lower, alpha = 0.3)
         plt.xlabel('Day')
         plt.ylabel('Mean cumulative regret')
         plt.legend(loc='upper right')
@@ -426,7 +519,7 @@ class partial_monitoring:
         list_list_gaussian = []
         list_list_augmented = []
         list_list_reduced = []
-        for i in range(200):
+        for i in range(20):
             self.create_spike_matrix()
             list_list_spike.append(self.predict_states(5, nb_day, True))
             self.create_gaussian_matrix()
@@ -481,15 +574,7 @@ class partial_monitoring:
         
 x = partial_monitoring()
 x.create_augmented_matrix()
-x.create_black_box_gaussian()
+x.create_black_box_proportional()
 x.UCBvslinUCBvsRandom()
-
-
-
-
-
-
-
-    
     
 

@@ -2,13 +2,14 @@ import numpy as np
 
 class linucb_disjoint_arm():
     
-    def __init__(self, arm_index, d, k):
+    def __init__(self, arm_index, d):
         
+        self.d = d
         # Track arm index
         self.arm_index = arm_index
         
         # Keep track of k
-        self.k = k
+        self.k = 1
         
         # A: (d x d) matrix = D_a.T * D_a + I_d. 
         # The inverse of A is used in ridge regression 
@@ -40,10 +41,6 @@ class linucb_disjoint_arm():
         # p is (1 x 1) dimension vector
         ucb = np.dot(self.theta.T,x) +  self.k* np.sqrt(np.log(T)) * np.sqrt(np.dot(x.T, np.dot(A_star_inv,x)))
         
-        if T < 100:
-            print(ucb)
-            
-        
         return ucb
     
     def reward_update(self, reward, x_array):
@@ -57,12 +54,20 @@ class linucb_disjoint_arm():
         # reward is scalar
         self.b += reward * x
         
+    def clean_variables(self):
+        
+        self.A = np.identity(self.d)
+        
+        self.A_star = np.identity(self.d)
+        
+        self.b = np.zeros([self.d,1])
+        
         
 class linucb_policy():
     
-    def __init__(self, K_arms, d, k):
+    def __init__(self, K_arms, d):
         self.K_arms = K_arms
-        self.linucb_arms = [linucb_disjoint_arm(arm_index = 1, d = d, k = k) for i in range(K_arms)]
+        self.linucb_arms = [linucb_disjoint_arm(arm_index = i, d = d) for i in range(K_arms)]
         self.T = 0
         
         
@@ -102,8 +107,11 @@ class linucb_policy():
         # Update A_star
         self.linucb_arms[chosen_arm].A_star += np.dot(x, x.T)
         
-        
         return chosen_arm
+    
+    def clean_all_variables(self):
+        for arm in range(self.K_arms):
+            self.linucb_arms[arm].clean_variables()
     
     
 class UCB():
@@ -111,25 +119,49 @@ class UCB():
         self.k = k
         self.t = 0
         self.u = np.zeros(k)
-        self.N_k = np.zeros(k)
+        self.N_k = np.ones(k)
     
     def ucb(self):
+        self.t += 1
         list_ucb = np.zeros(self.k)
-        for t in range(len(self.u)):
-            list_ucb[t] = self.u[t] + np.sqrt(2*np.log(self.t)/self.N_k[t])
-        return np.argmax(list_ucb)
+        for k in range(self.k):
+            list_ucb[k] = self.u[k] + np.sqrt(2*np.log(self.t)/self.N_k[k])
+        chosen_action = np.argmax(list_ucb)
+        self.N_k[chosen_action] += 1
+        return chosen_action
         
     def reward(self, action, reward):
-        self.t += 1
-        self.N_k[action] += 1
         self.u[action] = (self.u[action]*(self.N_k[action]-1) + reward)/self.N_k[action]
+    
+    def clean_all_variables(self):
+        self.t = 0
+        self.u = np.zeros(self.k)
+        self.N_k = np.ones(self.k)
         
+
+def test_UCB():
+    count_action_2 = 0
+    ucb = UCB(2)
+    reward1 = np.random.normal(1,2)
+    reward2 = np.random.normal(3,2)
+    ucb.reward(0, reward1)
+    ucb.reward(1, reward2)
+    for i in range(1000):
+        chosen_action = ucb.ucb()
+        if chosen_action == 0:
+            reward1 = np.random.normal(1,3)
+            ucb.reward(0, reward1)
+        else:
+            reward2 = np.random.normal(3,2)
+            ucb.reward(1, reward2)
+            count_action_2 += 1
+    assert count_action_2 > 900
 
 def test_linucb_policy():
     # Action 1: If x > 5 reward = 1 else reward = 0
     # Action 2: If x > 3 reward = 1 else reward = 0    ucb = 0
 
-    LinUCB = linucb_policy(K_arms = 2, d = 1, k = 1)
+    LinUCB = linucb_policy(K_arms = 2, d = 1)
     first_arm = LinUCB.select_arm(np.array([[2]]))
     LinUCB.linucb_arms[0].reward_update(0, np.array([[3]]))
     LinUCB.linucb_arms[1].reward_update(1, np.array([[3]]))
@@ -149,9 +181,7 @@ def test_linucb_policy():
 
 if __name__== '__main__':
     test_linucb_policy()
-    
-
-
+    test_UCB()
 
 
 
