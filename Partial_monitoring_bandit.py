@@ -5,6 +5,7 @@ from linUCB import linucb_policy, UCB
 from linTS import linTS_policy
 from scipy import signal
 import seaborn as sns
+from numpy import linalg as LA
 
 class partial_monitoring:
     def __init__(self):
@@ -13,7 +14,7 @@ class partial_monitoring:
         self.linTS_policy = linTS_policy(2,1)
         self.UCB = UCB(2)
         self.reward = 1
-        self.iteration_plot = 200
+        self.iteration_plot = 20
         self.nb_day = 30
         self.first_state = 4
         self.threshold = 9
@@ -171,17 +172,17 @@ class partial_monitoring:
         real_states = self.predict_states(first_state, nb_day, True)
         predicted_state = first_state
         list_predicted_states = []#
-        list_surveys = []#
+        list_gather_info = []#
         for t in range(1, nb_day+1):
             predicted_state = self.next_state_black_box(predicted_state, False)
             if predicted_state >= threshold:
                 list_predicted_states.append(predicted_state)
                 predicted_state = real_states[t]
-                list_surveys.append(True)
+                list_gather_info.append(True)
             else:
                 list_predicted_states.append(predicted_state)
-                list_surveys.append(False)
-        return real_states, list_predicted_states, list_surveys
+                list_gather_info.append(False)
+        return real_states, list_predicted_states, list_gather_info
 
     def performance_threshold(self):
         fp = 0
@@ -191,50 +192,56 @@ class partial_monitoring:
         pseudo_regret_cumulatif = 0
         list_regret = []
         for i in range(self.iteration_plot):
+            nb_predicted_days = 0
             nb_day = self.nb_day
             first_state = self.first_state
             threshold = self.threshold
-            real_states, list_predicted_states, list_surveys = self.threshold(first_state, nb_day, threshold)
+            real_states, list_predicted_states, list_gather_info = self.threshold(first_state, nb_day, threshold)
             for t in range(nb_day):
-                if real_states[t+1] >= threshold and list_surveys[t] == True:
+                if real_states[t+1] >= threshold and list_gather_info[t] == True:
+                    nb_predicted_days = 0
                     vp += 1
+                    pseudo_regret_cumulatif += self.pseudo_regret(first_state, threshold, 0, 1)
                     list_regret.append(pseudo_regret_cumulatif)
-                elif real_states[t+1] >= threshold and list_surveys[t] == False:
+                elif real_states[t+1] >= threshold and list_gather_info[t] == False:
+                    nb_predicted_days += 1
                     fn += 1
-                    pseudo_regret_cumulatif += self.reward - self.unkown_reward
+                    pseudo_regret_cumulatif += self.pseudo_regret(first_state, threshold, nb_predicted_days, 1)
                     list_regret.append(pseudo_regret_cumulatif)
-                elif real_states[t+1] < threshold and list_surveys[t] == True:
+                elif real_states[t+1] < threshold and list_gather_info[t] == True:
+                    nb_predicted_days = 0
                     fp += 1
-                    pseudo_regret_cumulatif += self.unkown_reward
+                    pseudo_regret_cumulatif += self.pseudo_regret(first_state, threshold, 0, 1)
                     list_regret.append(pseudo_regret_cumulatif)
-                elif real_states[t+1] < threshold and list_surveys[t] == False:
+                elif real_states[t+1] < threshold and list_gather_info[t] == False:
+                    nb_predicted_days += 1
                     vn += 1
+                    pseudo_regret_cumulatif += self.pseudo_regret(first_state, threshold, nb_predicted_days, 1)
                     list_regret.append(pseudo_regret_cumulatif)
-        plt.plot(list_regret)
-        return np.array([[vp, fn],[fp, vn]]), (vp+vn)/(fn+fp)
+        return np.array([[vp, fn],[fp, vn]]), list_regret
         
     def apply_UCB(self, first_state, nb_day, threshold):
         real_states = self.predict_states(first_state, nb_day, True)
-        list_surveys = []#
+        list_gather_info = []#
         for t in range(1, nb_day+1):
             ucb = self.UCB.ucb()
             if t == 1:
-                list_surveys.append(False)
+                list_gather_info.append(False)
             elif t == 2:
-                list_surveys.append(True)
+                list_gather_info.append(True)
                 if real_states[t] >= threshold:
                     self.UCB.reward(0, self.reward)
                 elif real_states[t] < threshold:
                     self.UCB.reward(0, 0)
             elif ucb == 0:
-                list_surveys.append(True)
+                list_gather_info.append(True)
                 if real_states[t] >= threshold:
                     self.UCB.reward(0, self.reward)
                 elif real_states[t] < threshold:
                     self.UCB.reward(0, 0)
             elif ucb == 1:
-                list_surveys.append(False)
-        return real_states, list_surveys
+                list_gather_info.append(False)
+        return real_states, list_gather_info
     
     def performance_UCB(self):
         fp = 0
@@ -244,23 +251,31 @@ class partial_monitoring:
         pseudo_regret_cumulatif = 0
         list_regret = []
         for i in range(self.iteration_plot):
+            nb_predicted_days = 0
             nb_day = self.nb_day
             first_state = self.first_state
             threshold = self.threshold
-            real_states, list_surveys = self.apply_UCB(first_state, nb_day, threshold)
+            real_states, list_gather_info = self.apply_UCB(first_state, nb_day, threshold)
             for t in range(nb_day):
-                if real_states[t+1] >= threshold and list_surveys[t] == True:
+                if real_states[t+1] >= threshold and list_gather_info[t] == True:
+                    nb_predicted_days = 0
                     vp += 1
+                    pseudo_regret_cumulatif += self.pseudo_regret(first_state, threshold, 0, 1)
                     list_regret.append(pseudo_regret_cumulatif)
-                elif real_states[t+1] >= threshold and list_surveys[t] == False:
+                elif real_states[t+1] >= threshold and list_gather_info[t] == False:
+                    nb_predicted_days += 1
                     fn += 1
-                    pseudo_regret_cumulatif += self.reward
+                    pseudo_regret_cumulatif += self.pseudo_regret(first_state, threshold, nb_predicted_days, 1)
                     list_regret.append(pseudo_regret_cumulatif)
-                elif real_states[t+1] < threshold and list_surveys[t] == True:
+                elif real_states[t+1] < threshold and list_gather_info[t] == True:
+                    nb_predicted_days = 0
                     fp += 1
+                    pseudo_regret_cumulatif += self.pseudo_regret(first_state, threshold, 0, 1)
                     list_regret.append(pseudo_regret_cumulatif)
-                elif real_states[t+1] < threshold and list_surveys[t] == False:
+                elif real_states[t+1] < threshold and list_gather_info[t] == False:
+                    nb_predicted_days += 1
                     vn += 1
+                    pseudo_regret_cumulatif += self.pseudo_regret(first_state, threshold, nb_predicted_days, 1)
                     list_regret.append(pseudo_regret_cumulatif)
         return np.array([[vp, fn],[fp, vn]]), list_regret
         
@@ -269,25 +284,25 @@ class partial_monitoring:
         real_states = self.predict_states(first_state, nb_day, True)
         predicted_state = first_state
         list_predicted_states = []#
-        list_surveys = []#
+        list_gather_info = []#
         for t in range(1, nb_day+1):
             predicted_state = self.next_state_black_box(predicted_state, False)
-            survey = self.linucb_policy_object.select_arm(predicted_state)
-            if survey == True:
-                list_surveys.append(True)#
+            gather_info = self.linucb_policy_object.select_arm(predicted_state)
+            if gather_info == True:
+                list_gather_info.append(True)#
                 list_predicted_states.append(predicted_state)#
                 predicted_state = real_states[t]
                 
                 if real_states[t] >= threshold:
-                    self.linucb_policy_object.linucb_arms[survey].reward_update(self.reward, predicted_state)
+                    self.linucb_policy_object.linucb_arms[gather_info].reward_update(self.reward, predicted_state)
                 
                 else:
-                    self.linucb_policy_object.linucb_arms[survey].reward_update(0, predicted_state)
+                    self.linucb_policy_object.linucb_arms[gather_info].reward_update(0, predicted_state)
                     
-            elif survey == False:
-                list_surveys.append(False)#
+            elif gather_info == False:
+                list_gather_info.append(False)#
                 list_predicted_states.append(predicted_state)#
-        return real_states, list_predicted_states, list_surveys
+        return real_states, list_predicted_states, list_gather_info
 
 
     
@@ -299,50 +314,57 @@ class partial_monitoring:
         pseudo_regret_cumulatif = 0
         list_regret = []
         for i in range(self.iteration_plot):
+            nb_predicted_days = 0
             nb_day = self.nb_day
             first_state = self.first_state
             threshold = self.threshold
-            real_states, list_predicted_states, list_surveys = self.linUCB(first_state, nb_day, threshold)
+            real_states, list_predicted_states, list_gather_info = self.linUCB(first_state, nb_day, threshold)
             for t in range(nb_day):
-                if real_states[t+1] >= threshold and list_surveys[t] == True:
+                if real_states[t+1] >= threshold and list_gather_info[t] == True:
+                    nb_predicted_days = 0
                     vp += 1
+                    pseudo_regret_cumulatif += self.pseudo_regret(first_state, threshold, 0, 1)
                     list_regret.append(pseudo_regret_cumulatif)
-                elif real_states[t+1] >= threshold and list_surveys[t] == False:
+                elif real_states[t+1] >= threshold and list_gather_info[t] == False:
+                    nb_predicted_days += 1
                     fn += 1
-                    pseudo_regret_cumulatif += self.reward
+                    pseudo_regret_cumulatif += self.pseudo_regret(first_state, threshold, nb_predicted_days, 1)
                     list_regret.append(pseudo_regret_cumulatif)
-                elif real_states[t+1] < threshold and list_surveys[t] == True:
+                elif real_states[t+1] < threshold and list_gather_info[t] == True:
+                    nb_predicted_days = 0
                     fp += 1
+                    pseudo_regret_cumulatif += self.pseudo_regret(first_state, threshold, 0, 1)
                     list_regret.append(pseudo_regret_cumulatif)
-                elif real_states[t+1] < threshold and list_surveys[t] == False:
+                elif real_states[t+1] < threshold and list_gather_info[t] == False:
+                    nb_predicted_days += 1
                     vn += 1
+                    pseudo_regret_cumulatif += self.pseudo_regret(first_state, threshold, nb_predicted_days, 1)
                     list_regret.append(pseudo_regret_cumulatif)
-        #plt.plot(list_regret)
         return np.array([[vp, fn],[fp, vn]]), list_regret
 
     def linTS(self, first_state, nb_day, threshold):
         real_states = self.predict_states(first_state, nb_day, True)
         predicted_state = first_state
         list_predicted_states = []#
-        list_surveys = []#
+        list_gather_info = []#
         for t in range(1, nb_day+1):
             predicted_state = self.next_state_black_box(predicted_state, False)
-            survey = self.linTS_policy.select_arm(predicted_state)
-            if survey == True:
-                list_surveys.append(True)#
+            gather_info = self.linTS_policy.select_arm(predicted_state)
+            if gather_info == True:
+                list_gather_info.append(True)#
                 list_predicted_states.append(predicted_state)#
                 predicted_state = real_states[t]
                 
                 if real_states[t] >= threshold:
-                    self.linTS_policy.linTS_arms[survey].update_reward(predicted_state, np.array([self.reward]))
+                    self.linTS_policy.linTS_arms[gather_info].update_reward(predicted_state, np.array([self.reward]))
                 
                 else:
-                    self.linTS_policy.linTS_arms[survey].update_reward(predicted_state, np.array([0]))
+                    self.linTS_policy.linTS_arms[gather_info].update_reward(predicted_state, np.array([0]))
                     
-            elif survey == False:
-                list_surveys.append(False)#
+            elif gather_info == False:
+                list_gather_info.append(False)#
                 list_predicted_states.append(predicted_state)#
-        return real_states, list_predicted_states, list_surveys
+        return real_states, list_predicted_states, list_gather_info
 
     def performance_linTS(self):
         fp = 0
@@ -352,25 +374,32 @@ class partial_monitoring:
         pseudo_regret_cumulatif = 0
         list_regret = []
         for i in range(self.iteration_plot):
+            nb_predicted_days = 0
             nb_day = self.nb_day
             first_state = self.first_state
             threshold = self.threshold
-            real_states, list_predicted_states, list_surveys = self.linTS(first_state, nb_day, threshold)
+            real_states, list_predicted_states, list_gather_info = self.linTS(first_state, nb_day, threshold)
             for t in range(nb_day):
-                if real_states[t+1] >= threshold and list_surveys[t] == True:
+                if real_states[t+1] >= threshold and list_gather_info[t] == True:
+                    nb_predicted_days = 0
                     vp += 1
+                    pseudo_regret_cumulatif += self.pseudo_regret(first_state, threshold, 0, 1)
                     list_regret.append(pseudo_regret_cumulatif)
-                elif real_states[t+1] >= threshold and list_surveys[t] == False:
+                elif real_states[t+1] >= threshold and list_gather_info[t] == False:
+                    nb_predicted_days += 1
                     fn += 1
-                    pseudo_regret_cumulatif += self.reward
+                    pseudo_regret_cumulatif += self.pseudo_regret(first_state, threshold, nb_predicted_days, 1)
                     list_regret.append(pseudo_regret_cumulatif)
-                elif real_states[t+1] < threshold and list_surveys[t] == True:
+                elif real_states[t+1] < threshold and list_gather_info[t] == True:
+                    nb_predicted_days = 0
                     fp += 1
+                    pseudo_regret_cumulatif += self.pseudo_regret(first_state, threshold, 0, 1)
                     list_regret.append(pseudo_regret_cumulatif)
-                elif real_states[t+1] < threshold and list_surveys[t] == False:
+                elif real_states[t+1] < threshold and list_gather_info[t] == False:
+                    nb_predicted_days += 1
                     vn += 1
+                    pseudo_regret_cumulatif += self.pseudo_regret(first_state, threshold, nb_predicted_days, 1)
                     list_regret.append(pseudo_regret_cumulatif)
-        #plt.plot(list_regret)
         return np.array([[vp, fn],[fp, vn]]), list_regret
     
     def performance_random(self):
@@ -381,25 +410,32 @@ class partial_monitoring:
         pseudo_regret_cumulatif = 0
         list_regret = []
         for i in range(self.iteration_plot):
+            nb_predicted_days = 0
             nb_day = self.nb_day
             first_state = self.first_state
             threshold = self.threshold
             real_states = self.predict_states(first_state, nb_day, True)
-            list_surveys = [random.choice([True, False]) for i in range(len(real_states)-1)]
-            
+            list_gather_info = [random.choice([True, False]) for i in range(len(real_states)-1)]
             for t in range(nb_day):
-                if real_states[t+1] >= threshold and list_surveys[t] == True:
+                if real_states[t+1] >= threshold and list_gather_info[t] == True:
+                    nb_predicted_days = 0
                     vp += 1
+                    pseudo_regret_cumulatif += self.pseudo_regret(first_state, threshold, 0, 1)
                     list_regret.append(pseudo_regret_cumulatif)
-                elif real_states[t+1] >= threshold and list_surveys[t] == False:
+                elif real_states[t+1] >= threshold and list_gather_info[t] == False:
+                    nb_predicted_days += 1
                     fn += 1
-                    pseudo_regret_cumulatif += self.reward
+                    pseudo_regret_cumulatif += self.pseudo_regret(first_state, threshold, nb_predicted_days, 1)
                     list_regret.append(pseudo_regret_cumulatif)
-                elif real_states[t+1] < threshold and list_surveys[t] == True:
+                elif real_states[t+1] < threshold and list_gather_info[t] == True:
+                    nb_predicted_days = 0
                     fp += 1
+                    pseudo_regret_cumulatif += self.pseudo_regret(first_state, threshold, 0, 1)
                     list_regret.append(pseudo_regret_cumulatif)
-                elif real_states[t+1] < threshold and list_surveys[t] == False:
+                elif real_states[t+1] < threshold and list_gather_info[t] == False:
+                    nb_predicted_days += 1
                     vn += 1
+                    pseudo_regret_cumulatif += self.pseudo_regret(first_state, threshold, nb_predicted_days, 1)
                     list_regret.append(pseudo_regret_cumulatif)
         return np.array([[vp, fn],[fp, vn]]), list_regret
     
@@ -409,8 +445,8 @@ class partial_monitoring:
         ax = sns.heatmap(confusion_matrix, annot=True, cmap='Blues')
         ax.set_xlabel('\nPredicted Values')
         ax.set_ylabel('Actual Values ');
-        ax.xaxis.set_ticklabels(['False','True'])
-        ax.yaxis.set_ticklabels(['False','True'])
+        ax.xaxis.set_ticklabels(['True','False'])
+        ax.yaxis.set_ticklabels(['True','False'])
         ax.set_title(title)
         plt.show()
     
@@ -418,13 +454,16 @@ class partial_monitoring:
         list_list_regret_UCB = []
         list_list_regret_linUCB = []
         list_list_regret_random = []#
+        list_list_regret_linTS = []#
         
         list_list_confusion_UCB = []
         list_list_confusion_linUCB = []
         list_list_confusion_random = []#
+        list_list_confusion_linTS = []#
         for i in range(100):
             self.linucb_policy_object.clean_all_variables()
             self.UCB.clean_all_variables()
+            self.linTS_policy.clean_all_variables()
             matrix, list_regret_UCB = self.performance_UCB()
             list_list_regret_UCB.append(list_regret_UCB)
             list_list_confusion_UCB.append(matrix)
@@ -434,22 +473,28 @@ class partial_monitoring:
             matrix, list_regret_random = self.performance_random()#
             list_list_regret_random.append(list_regret_random)#
             list_list_confusion_random.append(matrix)#
+            matrix, list_regret_linTS = self.performance_linTS()#
+            list_list_regret_linTS.append(list_regret_linTS)#
+            list_list_confusion_linTS.append(matrix)#
            
         list_list_regret_UCB = np.array(list_list_regret_UCB)
         list_list_regret_linUCB = np.array(list_list_regret_linUCB)
         list_list_regret_random = np.array(list_list_regret_random)
-        #list_list_confusion_UCB = np.array(list_list_confusion_UCB)
-        #list_list_confusion_linUCB = np.array(list_list_confusion_linUCB)
-        #list_list_confusion_random = np.array(list_list_confusion_random)
+        list_list_confusion_UCB = np.array(list_list_confusion_UCB)
+        list_list_confusion_linUCB = np.array(list_list_confusion_linUCB)
+        list_list_confusion_random = np.array(list_list_confusion_random)
+        list_list_confusion_linTS = np.array(list_list_confusion_linTS)
         
         #Confusion matrix
-        #np.set_printoptions(suppress=True)
-        #mean_confusion_UCB = np.mean(list_list_confusion_UCB, axis=0)
-        #self.plot_confusion_matrix(mean_confusion_UCB)
-        #mean_confusion_linUCB = np.mean(list_list_confusion_linUCB, axis=0)
-        #self.plot_confusion_matrix(mean_confusion_linUCB, 'LinUCB')
-        #mean_confusion_random = np.mean(list_list_confusion_random, axis=0)#
-        #self.plot_confusion_matrix(mean_confusion_random, 'Random')
+        np.set_printoptions(suppress=True)
+        mean_confusion_UCB = np.mean(list_list_confusion_UCB, axis=0)
+        self.plot_confusion_matrix(mean_confusion_UCB, 'UCB')
+        mean_confusion_linUCB = np.mean(list_list_confusion_linUCB, axis=0)
+        self.plot_confusion_matrix(mean_confusion_linUCB, 'LinUCB')
+        mean_confusion_random = np.mean(list_list_confusion_random, axis=0)#
+        self.plot_confusion_matrix(mean_confusion_random, 'Random')
+        mean_confusion_linTS = np.mean(list_list_confusion_linTS, axis=0)#
+        self.plot_confusion_matrix(mean_confusion_linTS, 'linTS')
         
         mean_UCB = np.mean(list_list_regret_UCB, axis=0)
         std_UCB = np.std(list_list_regret_UCB, axis=0)
@@ -570,11 +615,26 @@ class partial_monitoring:
         plt.legend(loc='upper right')
         plt.show()
         
+    def pseudo_regret(self, first_state, threshold, n_prediction, action_took):
+        list_probability = self.markov[first_state]
+        for n in range(n_prediction):
+            list_probability_n = np.zeros(10)
+            for i in range(10):
+                list_probability_n += list_probability[i]*self.markov[i]
+            list_probability = list_probability_n
+        sum_under_thresold = np.sum(list_probability[:threshold-1])
+        sum_after_thresold = np.sum(list_probability[threshold-1:])
         
+        sums = [sum_under_thresold, sum_after_thresold]
         
+        pseudo_regret = np.max(sums) - sums[action_took]
+        
+        return pseudo_regret
+
+        
+
 x = partial_monitoring()
 x.create_augmented_matrix()
 x.create_black_box_proportional()
 x.UCBvslinUCBvsRandom()
-    
 
