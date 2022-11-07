@@ -73,7 +73,7 @@ class linTS_policy():
         self.linTS_arms = [linTS_disjoint_arm(arm_index = 1, d = d) for i in range(K_arms)]
         
         
-    def select_arm(self, x):
+    def get_action(self, x):
         
         x = x.reshape(-1,1)
         
@@ -106,6 +106,9 @@ class linTS_policy():
         
         
         return chosen_arm
+    
+    def update(self, action, feedback, outcome, t, x_array):
+        self.linTS_arms[action].reward_update(feedback, x_array)
     
     def clean_all_variables(self):
         for arm in self.linTS_arms:
@@ -145,7 +148,7 @@ for i in range(100):
     for i in range(1, len(random_list)):
         x = random_list[i]
         r = reward[i]
-        chosen_arm = lints.select_arm(x)
+        chosen_arm = lints.get_action(x)
         lints.linTS_arms[chosen_arm].update_reward(x, r[chosen_arm])
         if chosen_arm == 0:
             lints.linTS_arms[1].update_reward(x, r[1])

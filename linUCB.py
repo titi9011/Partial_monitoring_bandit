@@ -24,7 +24,7 @@ class linucb_disjoint_arm():
         self.b = np.zeros([d,1])
         
         
-    def calc_UCB(self, x, T):
+    def calc_UCB(self, x, t):
         
         
         # Find A inverse for ridge regression
@@ -39,15 +39,17 @@ class linucb_disjoint_arm():
         
         # Find ucb based on p formulation (mean + std_dev) 
         # p is (1 x 1) dimension vector
-        ucb = np.dot(self.theta.T,x) +  self.k* np.sqrt(np.log(T)) * np.sqrt(np.dot(x.T, np.dot(A_star_inv,x)))
+        ucb = np.dot(self.theta.T,x) + self.k* np.sqrt(np.dot(x.T, np.dot(A_star_inv,x))) #np.sqrt( np.log(t) )
         
         return ucb
+    
+    
     
     def reward_update(self, reward, x_array):
         # Reshape covariates input into (d x 1) shape vector
         x = x_array.reshape([-1,1])
         
-        # Update A which is (d * d) matrix.
+        # Update A which is (d * d) matrix
         self.A += np.dot(x, x.T)
         
         # Update b which is (d x 1) vector
@@ -68,13 +70,12 @@ class linucb_policy():
     def __init__(self, K_arms, d):
         self.K_arms = K_arms
         self.linucb_arms = [linucb_disjoint_arm(arm_index = i, d = d) for i in range(K_arms)]
-        self.T = 0
+        self.T = 1
         
         
-    def select_arm(self, x_array):
-        
-        # Update T
+    def get_action(self, t, x_array):
         self.T += 1
+        
         x = x_array.reshape([-1,1])
         
         # Initiate ucb to be 0
@@ -109,62 +110,25 @@ class linucb_policy():
         
         return chosen_arm
     
+    def update(self, action, feedback, outcome, t, x_array):
+        self.linucb_arms[action].reward_update(feedback, x_array)
+    
     def clean_all_variables(self):
         for arm in range(self.K_arms):
             self.linucb_arms[arm].clean_variables()
-    
-    
-class UCB():
-    def __init__(self, k):
-        self.k = k
-        self.t = 0
-        self.u = np.zeros(k)
-        self.N_k = np.ones(k)
-    
-    def ucb(self):
-        self.t += 1
-        list_ucb = np.zeros(self.k)
-        for k in range(self.k):
-            list_ucb[k] = self.u[k] + np.sqrt(2*np.log(self.t)/self.N_k[k])
-        chosen_action = np.argmax(list_ucb)
-        self.N_k[chosen_action] += 1
-        return chosen_action
-        
-    def reward(self, action, reward):
-        self.u[action] = (self.u[action]*(self.N_k[action]-1) + reward)/self.N_k[action]
-    
-    def clean_all_variables(self):
-        self.t = 0
-        self.u = np.zeros(self.k)
-        self.N_k = np.ones(self.k)
-        
 
-def test_UCB():
-    count_action_2 = 0
-    ucb = UCB(2)
-    reward1 = np.random.normal(1,2)
-    reward2 = np.random.normal(3,2)
-    ucb.reward(0, reward1)
-    ucb.reward(1, reward2)
-    for i in range(1000):
-        chosen_action = ucb.ucb()
-        if chosen_action == 0:
-            reward1 = np.random.normal(1,3)
-            ucb.reward(0, reward1)
-        else:
-            reward2 = np.random.normal(3,2)
-            ucb.reward(1, reward2)
-            count_action_2 += 1
-    assert count_action_2 > 900
-
+    
+    
+'''
 def test_linucb_policy():
     # Action 1: If x > 5 reward = 1 else reward = 0
     # Action 2: If x > 3 reward = 1 else reward = 0    ucb = 0
-
+    a = 0
+    
     LinUCB = linucb_policy(K_arms = 2, d = 1)
-    first_arm = LinUCB.select_arm(np.array([[2]]))
-    LinUCB.linucb_arms[0].reward_update(0, np.array([[3]]))
-    LinUCB.linucb_arms[1].reward_update(1, np.array([[3]]))
+    first_arm = LinUCB.get_action( 1, np.array([[2]]))
+    LinUCB.update(0, 0, a, 1, np.array([[3]]))
+    LinUCB.update(1, 0, a, 1, np.array([[3]]))
     if first_arm == 0:
         A = 1+3*3
         A_star = 1 + 2*2
@@ -181,9 +145,9 @@ def test_linucb_policy():
 
 if __name__== '__main__':
     test_linucb_policy()
-    test_UCB()
 
 
+'''
 
 
 
