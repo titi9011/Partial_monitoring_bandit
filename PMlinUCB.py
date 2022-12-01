@@ -1,6 +1,6 @@
 import numpy as np
 
-class linucb_disjoint_arm():
+class PM_linucb_disjoint_arm():
     
     def __init__(self, arm_index, d):
         
@@ -40,9 +40,8 @@ class linucb_disjoint_arm():
         
         # Find ucb based on p formulation (mean + std_dev) 
         # p is (1 x 1) dimension vector
-        ucb = np.dot(self.theta.T, x) + self.k* np.sqrt(np.dot(x.T, np.dot(A_star_inv,x))) #np.sqrt( np.log(t) )*
+        ucb = np.dot(self.theta.T, x) +self.k*np.sqrt( np.log(t+10) )*    np.sqrt(np.dot(x.T, np.dot(A_star_inv,x))) #self.k*np.sqrt( np.log(t) )* 
         
-        print(self.theta.T , self.arm_index)
          
         return ucb
     
@@ -77,9 +76,6 @@ class linucb_disjoint_arm():
         # theta is (d x 1) dimension vector
         self.theta = np.dot(A_inv, self.b)
         
-        # Find A_star inverse for ridge regression
-        A_star_inv = np.linalg.inv(self.A_star)
-        
         # Find ucb based on p formulation (mean + std_dev) 
         # p is (1 x 1) dimension vector
         ucb = np.dot(self.theta.T, x) #np.sqrt( np.log(t) )*
@@ -109,20 +105,14 @@ class linucb_disjoint_arm():
         self.b = np.zeros([self.d,1])
         
         
-class linucb_policy():
+class PM_linucb_policy():
     
     def __init__(self, K_arms, d):
         self.K_arms = K_arms
-        self.linucb_arms = [linucb_disjoint_arm(arm_index = i, d = d) for i in range(K_arms)]
+        self.arms = [PM_linucb_disjoint_arm(arm_index = i, d = d) for i in range(K_arms)]
         self.T = 1
-        
-        self.list_ucb_0 = []
-        self.list_ucb_1 = []
-        self.list_ucb_0_bound = []
-        self.list_ucb_1_bound = []
-        self.list_ucb_0_estimator = []
-        self.list_ucb_1_estimator = []
-        
+        self.list_UCB = [[],[]]
+        self.list_bound = [[],[]]
         
         
     def get_action(self, t, x_array):
@@ -140,8 +130,13 @@ class linucb_policy():
         
         for arm_index in range(self.K_arms):
             # Calculate ucb based on each arm using current covariates at time t
-            arm_ucb = self.linucb_arms[arm_index].calc_UCB(x, self.T)
+            arm_ucb = self.arms[arm_index].calc_UCB(x, self.T)
             
+            #Save estimator and confidence bound
+            UCB_estimator = self.arms[arm_index].calc_UCB_estimator(np.array([0,0,0,0,0,1,0,0,0,0]).reshape(-1,1), self.T)
+            UCB_bound = self.arms[arm_index].calc_UCB_bound(np.array([0,0,0,0,0,1,0,0,0,0]).reshape(-1,1), self.T)
+            self.list_UCB[arm_index].append(UCB_estimator)
+            self.list_bound[arm_index].append(UCB_bound)
             
             # If current arm is highest than current highest_ucb
             if arm_ucb > highest_ucb:
@@ -161,31 +156,31 @@ class linucb_policy():
         chosen_arm = np.random.choice(candidate_arms)
         
         # Update A_star
-        self.linucb_arms[chosen_arm].A_star += np.dot(x, x.T)
+        self.arms[chosen_arm].A_star += np.dot(x, x.T)
         
-        
-        x[0] = 5
-        x[1] = 9-5
-        #print(self.linucb_arms[0].calc_UCB(x, t))
-        #print(self.linucb_arms[1].calc_UCB(x, t))
-        
-        
-        self.list_ucb_0.append(self.linucb_arms[0].calc_UCB(x, t))
-        self.list_ucb_1.append(self.linucb_arms[1].calc_UCB(x, t))
-        self.list_ucb_0_bound.append(self.linucb_arms[0].calc_UCB_bound(x, t))
-        self.list_ucb_1_bound.append(self.linucb_arms[1].calc_UCB_bound(x, t))
-        self.list_ucb_0_estimator.append(self.linucb_arms[0].calc_UCB_estimator(x, t))
-        self.list_ucb_1_estimator.append(self.linucb_arms[1].calc_UCB_estimator(x, t))
+        '''
+        x[0] = 3
+        x[1] = 3-5
+        print(self.arms[0].calc_UCB(x, t))
+        print(self.arms[1].calc_UCB(x, t))
 
+        self.list_ucb_0.append(self.arms[0].calc_UCB(x, t))
+        self.list_ucb_1.append(self.arms[1].calc_UCB(x, t))
+        self.list_ucb_0_bound.append(self.arms[0].calc_UCB_bound(x, t))
+        self.list_ucb_1_bound.append(self.arms[1].calc_UCB_bound(x, t))
+        self.list_ucb_0_estimator.append(self.arms[0].calc_UCB_estimator(x, t))
+        self.list_ucb_1_estimator.append(self.arms[1].calc_UCB_estimator(x, t))
+        '''
+        
         return chosen_arm
     
     def update(self, action, feedback, outcome, t, x_array):
-        self.linucb_arms[action].reward_update(feedback, x_array)
-
+        self.arms[action].reward_update(feedback, x_array)
+        self.arms[[1,0][action]].reward_update([1,0][feedback], x_array)
     
     def clean_all_variables(self):
         for arm in range(self.K_arms):
-            self.linucb_arms[arm].clean_variables()
+            self.arms[arm].clean_variables()
 
 
 

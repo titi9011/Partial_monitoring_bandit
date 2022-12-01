@@ -7,7 +7,7 @@ from linTS import linTS_policy
 from scipy import signal
 import seaborn as sns
 
-#np.random.seed(0)
+np.random.seed(0)
 
 class partial_monitoring:
     def __init__(self):
@@ -16,9 +16,9 @@ class partial_monitoring:
         self.linTS_policy = linTS_policy(2,1)
         self.UCB = UCB(2)
         self.reward = 1
-        self.iteration_plot = 20
+        self.iteration_plot = 100
         self.time_horizon = 30
-        self.first_state = 4
+        self.first_state = 5
         self.threshold = 6
         
     def next_state(self, current_state, random):
@@ -29,7 +29,7 @@ class partial_monitoring:
         return state
     
     def predict_states(self, first_state, nb_predictions, random):
-        #np.random.seed(0) #Thierry SEED
+        np.random.seed(0) #Thierry SEED
         visited_states = [first_state]
         for i in range(nb_predictions):
             next_state = self.next_state(visited_states[-1], random)
@@ -227,7 +227,7 @@ class partial_monitoring:
         real_states = self.predict_states(first_state, time_horizon, True)
         list_gather_info = []#
         for t in range(1, time_horizon+1):
-            action = self.UCB.get_action()
+            action = self.UCB.get_action(t, t)
             #print('UCB',real_states[t], action)
             #print(real_states[t], action)
 #            if t == 1:
@@ -244,7 +244,7 @@ class partial_monitoring:
                     self.UCB.update(1, self.reward)
                     self.UCB.update(0, 0)
                 elif real_states[t] < threshold:
-                    self.UCB.update(1, 0)
+                    self.UCB.update(1, 0, )
                     self.UCB.update(0, self.reward)
             elif action == 0:
                 list_gather_info.append(False)
@@ -307,6 +307,7 @@ class partial_monitoring:
                     self.linucb_policy_object.linucb_arms[False].reward_update(self.reward, np.array([[predicted_state],[9-predicted_state]]))
                     
             elif gather_info == False:
+                    
                 list_gather_info.append(False)#
                 list_predicted_states.append(predicted_state)#
         return real_states, list_predicted_states, list_gather_info
@@ -453,22 +454,22 @@ class partial_monitoring:
         plt.show()
     
     def UCBvslinUCBvsRandom(self):
-        list_list_regret_UCB = []
+        #list_list_regret_UCB = []
         list_list_regret_linUCB = []
         list_list_regret_random = []#
         #list_list_regret_linTS = []#
         
-        list_list_confusion_UCB = []
+        #list_list_confusion_UCB = []
         list_list_confusion_linUCB = []
         list_list_confusion_random = []#
         #list_list_confusion_linTS = []#
-        for i in range(50):
+        for i in range(10):
             self.linucb_policy_object.clean_all_variables()
-            self.UCB.clean_all_variables()
+            #self.UCB.clean_all_variables()
             #self.linTS_policy.clean_all_variables()
-            matrix, list_regret_UCB = self.performance_UCB()
-            list_list_regret_UCB.append(list_regret_UCB)
-            list_list_confusion_UCB.append(matrix)
+            #matrix, list_regret_UCB = self.performance_UCB()
+            #list_list_regret_UCB.append(list_regret_UCB)
+            #list_list_confusion_UCB.append(matrix)
             matrix, list_regret_linUCB = self.performance_linUCB()
             list_list_regret_linUCB.append(list_regret_linUCB)
             list_list_confusion_linUCB.append(matrix)
@@ -479,18 +480,18 @@ class partial_monitoring:
             #list_list_regret_linTS.append(list_regret_linTS)#
             #list_list_confusion_linTS.append(matrix)#
            
-        list_list_regret_UCB = np.array(list_list_regret_UCB)
+        #list_list_regret_UCB = np.array(list_list_regret_UCB)
         list_list_regret_linUCB = np.array(list_list_regret_linUCB)
         list_list_regret_random = np.array(list_list_regret_random)
-        list_list_confusion_UCB = np.array(list_list_confusion_UCB)
+        #list_list_confusion_UCB = np.array(list_list_confusion_UCB)
         list_list_confusion_linUCB = np.array(list_list_confusion_linUCB)
         list_list_confusion_random = np.array(list_list_confusion_random)
         #list_list_confusion_linTS = np.array(list_list_confusion_linTS)
         
         #Confusion matrix
-        np.set_printoptions(suppress=True)
-        mean_confusion_UCB = np.mean(list_list_confusion_UCB, axis=0)
-        self.plot_confusion_matrix(mean_confusion_UCB, 'UCB')
+        #np.set_printoptions(suppress=True)
+        #mean_confusion_UCB = np.mean(list_list_confusion_UCB, axis=0)
+        #self.plot_confusion_matrix(mean_confusion_UCB, 'UCB')
         mean_confusion_linUCB = np.mean(list_list_confusion_linUCB, axis=0)
         self.plot_confusion_matrix(mean_confusion_linUCB, 'LinUCB')
         mean_confusion_random = np.mean(list_list_confusion_random, axis=0)#
@@ -498,10 +499,10 @@ class partial_monitoring:
         #mean_confusion_linTS = np.mean(list_list_confusion_linTS, axis=0)#
         #self.plot_confusion_matrix(mean_confusion_linTS, 'linTS')
         
-        mean_UCB = np.mean(list_list_regret_UCB, axis=0)
-        std_UCB = np.std(list_list_regret_UCB, axis=0)
-        UCB_upper = mean_UCB + std_UCB
-        UCB_lower = mean_UCB - std_UCB
+        #mean_UCB = np.mean(list_list_regret_UCB, axis=0)
+        #std_UCB = np.std(list_list_regret_UCB, axis=0)
+        #UCB_upper = mean_UCB + std_UCB
+        #UCB_lower = mean_UCB - std_UCB
         
         mean_linUCB = np.mean(list_list_regret_linUCB, axis=0)
         std_linUCB = np.std(list_list_regret_linUCB, axis=0)
@@ -514,8 +515,8 @@ class partial_monitoring:
         random_upper = mean_random + std_random#
         random_lower = mean_random - std_random#
 
-        plt.plot(mean_UCB, label='UCB mean')
-        plt.fill_between(x, UCB_lower, UCB_upper, alpha = 0.3)
+        #plt.plot(mean_UCB, label='UCB mean')
+        #plt.fill_between(x, UCB_lower, UCB_upper, alpha = 0.3)
         plt.plot(mean_linUCB, label='LinUCB mean')
         plt.fill_between(x, linUCB_upper, linUCB_lower, alpha = 0.3)
         #plt.plot(mean_random, label='Random mean')#
@@ -655,7 +656,18 @@ x.black_box = x.markov
 
 x.UCBvslinUCBvsRandom()
 
-print(x.predict_states(3, 30, True))
-print(x.predict_states(3, 30, True))
+print(x.predict_states(4, 30, True))
+print(x.predict_states(4, 30, True))
+
+
+plt.plot(np.array(x.linucb_policy_object.list_ucb_0).reshape([-1,1]))
+plt.plot(np.array(x.linucb_policy_object.list_ucb_1).reshape([-1,1]))
+plt.show()
+plt.plot(np.array(x.linucb_policy_object.list_ucb_0_bound).reshape([-1,1]))
+plt.plot(np.array(x.linucb_policy_object.list_ucb_1_bound).reshape([-1,1]))
+plt.show()
+plt.plot(np.array(x.linucb_policy_object.list_ucb_0_estimator).reshape([-1,1]))
+plt.plot(np.array(x.linucb_policy_object.list_ucb_1_estimator).reshape([-1,1]))
+plt.show()
 
 
